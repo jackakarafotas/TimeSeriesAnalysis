@@ -10,11 +10,20 @@
 
 /* MAIN */
 // Default
+ARFIMA::ARFIMA() {}
 ARFIMA::ARFIMA(const VectorXf& _time_series) : time_series(_time_series) {}
 ARFIMA::~ARFIMA() {}
+void ARFIMA::set_time_series(const VectorXf& _time_series) { time_series = _time_series; }
 
 
 // transform data
+void ARFIMA::train_test_split(const double& ratio) {
+	// Splits the training data into training and validation
+	unsigned int cutoff = floor(ratio*time_series.size());
+	training = time_series.head(cutoff);
+	validation = time_series.tail(time_series.size()-cutoff);
+}
+
 MatrixXf ARFIMA::transform_X(const VectorXf& _time_series,const VectorXf& _u) const {
 	// Transform time series data for model
 	// Get the independent variable matrix
@@ -75,24 +84,20 @@ VectorXf ARFIMA::_autoregression(
 	return y - X*_coefficients;
 }
 
-void ARFIMA::train(const int& _p, const float& _d, const int& _q) {
+void ARFIMA::train(const int& _p, const int& _q) {
 	// Train ARFIMA using two step regression method (Hannan–Rissanen algorithm)
 	p = _p;
-	d = _d;
 	q = _q;
-
-	// Difference time series
-	differenced_ts = difference(time_series,d);
 
 	// Regress to estimate u values for moving average model
 	u_p = 20;
 	VectorXf u_coeffs(u_p+1);
-	u = _autoregression(differenced_ts,u_p,u_coeffs);
+	u = _autoregression(training,u_p,u_coeffs);
 
 	// Get A and b matrices
 	adj_size = max(u_p+q,p);
-	A = transform_X(differenced_ts,u);
-	b = transform_y(differenced_ts,u);
+	A = transform_X(training,u);
+	b = transform_y(training,u);
 
 	// Solve least squares problem
 	coefficients = A.jacobiSvd(ComputeThinU | ComputeThinV).solve(b);
@@ -110,13 +115,23 @@ void ARFIMA::train(const int& _p, const float& _d, const int& _q) {
 	trained = true;
 }
 
+void ARFIMA::validate() {
+	// Validate model using validation set
+	VectorXf u_coeffs(u_p+1);
+	VectorXf u_predict = _autoregression(validation,u_p,u_coeffs);
+	MatrixXf data = transform_X(validation,u_predict);
+	VectorXf v_pred = (data * coefficients);
+
+	validation_pred = v_pred.head(v_pred.size()-1); // remove last element b/c can't compare it
+	validation_comp = validation.tail(validation_pred.size());
+}
 
 VectorXf ARFIMA::predict(const VectorXf& ts) const {
 	// Predict on an unseen data set
-	VectorXf diff_ts = difference(ts,d);
+	// Assumes data is differenced already
 	VectorXf u_coeffs(u_p+1);
-	VectorXf u_predict = _autoregression(diff_ts,u_p,u_coeffs);
-	MatrixXf data = transform_X(diff_ts,u_predict);
+	VectorXf u_predict = _autoregression(ts,u_p,u_coeffs);
+	MatrixXf data = transform_X(ts,u_predict);
 	VectorXf prediction = (data * coefficients); 
 	return prediction;
 }
@@ -142,8 +157,8 @@ void ARFIMA::predict_bounds(
 /* TESTING */
 double ARFIMA::AIC(const int& _p, const int& _q) {
 	// Aikake Information Criterion for Least Squares
-	train(_p,optimal_d,_q);
-	aic = log(pow(sd_resid,2.0)) + (2*(_p+_q)/(differenced_ts.size()));
+	train(_p,_q);
+	aic = log(pow(sd_resid,2.0)) + (2*(_p+_q)/(training.size()));
 	return aic;
 }
 
@@ -212,7 +227,7 @@ double ARFIMA::R2() const {
 	return 1 - (sse / tss);
 }
 
-double ARFIMA::adjusted_r2() const {
+double ARFIMA::adjusted_R2() const {
 	// Calculates the adjusted R2 for the model
 	double ts_mean = b.mean();
 	double ts_var = 0;
@@ -310,14 +325,14 @@ tuple<int,int> ARFIMA::pick_parameters(const int& max_p, const int& max_q) {
 }
 
 
-float ARFIMA::pick_d(const float& max_d) {
+float ARFIMA::pick_d(const VectorXf& _time_series,const float& max_d) {
 	// Find the lowest d (can be fractional) s.t. the time series is weakly stationary
 	bool test;
-	for (float d = 0; d <= max_d; d+= 0.1) {
-		test = unit_root_test(difference(time_series,d)); // dickey-fuller
+	for (float _d = 0; _d <= max_d; _d+= 0.1) {
+		test = unit_root_test(difference(_time_series,_d)); // dickey-fuller
 		if (test) {
-			optimal_d = d;
-			return d;
+			optimal_d = _d;
+			return _d;
 		}
 	}
 	throw invalid_argument( "Increase max d." );
@@ -360,29 +375,66 @@ bool ARFIMA::unit_root_test(
 
 VectorXf ARFIMA::difference(
 	const VectorXf& _time_series,
-	const float& d,
-	const float& weight_cutoff,
-	const int& max_weights_vector_size) const {
+	const float& d) {
 	// Fractionally difference a time series
 	// Uses a fixed-width window
 
 	// 1. Create our weight vector w
-	int max_size = min(max_weights_vector_size, (int)(2.0 * _time_series.size() / 3.0));
-	VectorXf w(max_size);
-	w(0) = 1.0;
-	int k = 1;
-	while ((k < max_size) && (abs(w(k-1)) > weight_cutoff)) {
-		w(k) = -w(k-1) * (d - k + 1) / k;
-		k++;
-	}
-	VectorXf weights = w.head(k);
+	differencing_weights = _get_weights(_time_series.size(), d);
 
 	// 2. transform data
-	VectorXf differenced_series(_time_series.size() - k);
-	for (int t = 0; t < _time_series.size()-k; t++)
-		differenced_series(t) = weights.dot(_time_series.segment(t,k));
+	VectorXf differenced_series(_time_series.size() - k_weights);
+	for (int t = 0; t < _time_series.size()-k_weights; t++)
+		differenced_series(t) = differencing_weights.dot(_time_series.segment(t,k_weights));
 
 	return differenced_series;
+}
+
+VectorXf ARFIMA::undifference_prediction(
+	const VectorXf& orig_prices,
+	const VectorXf& differenced_predictions,
+	const float& d) {
+	// Undifference time series we have already differenced
+	if (k_weights > orig_prices.size())
+		throw invalid_argument( "Time Series too small." );
+
+	VectorXf weights = differencing_weights.tail(k_weights-1);
+	double first_weight = differencing_weights(0);
+
+	VectorXf undifferenced_predictions(differenced_predictions.size());
+	double past_diff;
+	int print_count = 0;
+	for (int t = 0; t < undifferenced_predictions.size(); t++) {
+		past_diff = weights.dot(orig_prices.segment(t,k_weights-1));
+		undifferenced_predictions(t) = (differenced_predictions(t) - past_diff)/first_weight;
+
+		if ((print_count > 0) && (print_count < 10)) {
+			cout << differenced_predictions(t) << '\t' << orig_prices(t+k_weights) + past_diff << endl;
+		}
+		print_count++;
+	}
+
+	return undifferenced_predictions;
+
+}
+
+VectorXf ARFIMA::_get_weights(
+	const int& time_series_size,
+	const float& d,
+	const float& weight_cutoff,
+	const int& max_weights_vector_size) {
+	// Get weights for fractional differencing
+
+	int max_size = min(max_weights_vector_size, (int)(2.0 * time_series_size / 3.0));
+	VectorXf w(max_size);
+	w(0) = 1.0;
+
+	k_weights = 1;
+	while ((k_weights < max_size) && (abs(w(k_weights-1)) > weight_cutoff)) {
+		w(k_weights) = -w(k_weights-1) * (d - k_weights + 1) / k_weights;
+		k_weights++;
+	}
+	return w.head(k_weights);
 }
 
 
