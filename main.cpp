@@ -82,49 +82,69 @@ int main(int argc, char* argv[]) {
 	}
 
 
-	// Train ARFIMA model
+	// ARFIMA
 	cout << "\nARFIMA MODEL" << endl;
-	unsigned int cutoff = floor(3*log_close.size()/4);
-	VectorXf data_train = log_close.head(cutoff);
-	VectorXf data_test = log_close.tail(log_close.size()-cutoff);
+	ARFIMA* model = new ARFIMA();
+	cout << "Time Series not a Random Walk? " << print_bool(model->unit_root_test(log_close)) << endl;
 
-	ARFIMA* model = new ARFIMA(data_train);
-	cout << "Time Series not a Random Walk? " << print_bool(model->unit_root_test(data_train)) << endl;
+	// Difference
+	float d = model->pick_d(log_close,2);
+	VectorXf differenced_ts = model->difference(log_close, d);
+	model->set_time_series(differenced_ts);
 
-	// Pick params
-	float d = model->pick_d(5);
+	VectorXf u_ts = model->undifference_prediction(log_close, differenced_ts, d);
+	for (int i = 0; i < 20; i++) {
+		cout << "ORIG: " << log_close(i)
+		<< "\tTRANSFORMED: " << u_ts(i) << endl;
+	}
+
+	// Find optimal p and q
+	model->train_test_split();
 	tuple<int,int> p_q = model->pick_parameters(10,2);
 	cout << "Optimal p: " << get<0>(p_q) 
 	<< "\nOptimal q: " << get<1>(p_q)
 	<< "\nOptimal d: " << d << endl;
-	
 
-	model->train(get<0>(p_q),d,get<1>(p_q));
+	// TRAIN
+	model->train(get<0>(p_q),get<1>(p_q));
 	vector<bool> significant = model->test_coefficient_significance();
 
 	cout << "\nARMA Coefficients: " << endl;
 	for (int i = 0; i < significant.size(); i++)
 		cout << model->coefficients(i) << "\tSIGNIFICANT: " << print_bool(significant[i]) << endl; 
 
-	VectorXf prediction = model->predict(data_test);
-	VectorXf upper_predict(prediction.size());
-	VectorXf lower_predict(prediction.size());
-	VectorXf diff_actual = model->difference(data_test,d);
-	VectorXf actual = diff_actual.tail(diff_actual.size()-model->adj_size);
-	model->predict_bounds(prediction, 0.95, upper_predict, lower_predict);
+	model->validate();
+	VectorXf upper_predict(model->validation_pred.size());
+	VectorXf lower_predict(model->validation_pred.size());
+	model->predict_bounds(model->validation_pred, 0.95, upper_predict, lower_predict);
+
+	int orig_validation_size = model->validation.size() + model->k_weights;
+	VectorXf actual_log_prices = log_close.tail(orig_validation_size);
+	VectorXf differenced_validation = model->difference(actual_log_prices, d).tail(model->validation_comp.size());
+
+	VectorXf validation_log_close = log_close.segment(log_close.size()-orig_validation_size,orig_validation_size-1);
+	VectorXf log_price_prediction = model->undifference_prediction(validation_log_close, model->validation_pred, d);
+	cout << "UNDIFF COMP" << endl;
+	VectorXf validation_log_prices = model->undifference_prediction(validation_log_close, model->validation_comp, d);
 
 	cout << "\nPREDICTION:" << endl;
-	cout << "Test MSE: " << model->MSE(prediction,actual) << endl;
-	for (int i = 0; i < min_int(20,prediction.size()); i++) {
-		cout << "Actual: " << actual(i)
-		<< "\tPredicted: " << prediction(i) 
+	cout << "Test MSE: " << model->MSE(model->validation_pred,model->validation_comp) << endl;
+	for (int i = 0; i < min_int(20,model->validation_pred.size()); i++) {
+		cout << "Actual: " << model->validation_comp(i)
+		<< "\tPredicted: " << model->validation_pred(i)
+		<< "\tDifferenced: " << differenced_validation(i)
 		<< "\tLower: " << lower_predict(i)
 		<< "\tUpper: " << upper_predict(i) << endl;
+	}
+	for (int i = 1; i <= min_int(20,model->validation_pred.size()); i++) {
+		cout << "Actual price: " << actual_log_prices(actual_log_prices.size()-i)
+		<< "\tUndifferenced Comp Prices: " << (validation_log_prices(validation_log_prices.size()-i))
+		<< "\tPredicted price: " << (log_price_prediction(log_price_prediction.size() - i)) << endl;
 	}
 
 	cout << "\nSIGNIFICANT AUTOCORRELATION IN RESIDUALS? : " << print_bool(model->test_residual_autocorrelation(4)) << endl;
 	cout << "R2: " << model->R2() << endl;
-	cout << "ADJUSTED R2: " << model->adjusted_r2() << endl;
+	cout << "ADJUSTED R2: " << model->adjusted_R2() << endl;
 	cout << "Displayes ARCH effects? " << print_bool(model->test_arch_effect(5)) << endl;;
 
 	return 0;
