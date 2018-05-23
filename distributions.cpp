@@ -64,5 +64,24 @@ double Distributions::student_t(const double& x, const double& df) {
 	}
 }
 
+double Distributions::beta_dist(const double& x, const double& alpha, const double& beta) {
+	if ((x < 0) || (x > 1)) 
+		throw invalid_argument( "x must be between 0 and 1." );
+	if ((alpha < 0) || (beta < 0))
+		throw invalid_argument( "alpha and beta must be greater than 0." );
+
+	double probability = pow(x, alpha-1) * pow(1-x,beta-1);
+	probability /= ((tgammal(alpha) * tgammal(beta)) / tgammal(alpha+beta));
+	return probability;
+}
+
+double Distributions::inverse_gamma(const double& x, const double& kappa, const double& inv_precision) {
+	double probability = pow(kappa * pow(inv_precision,2.0), kappa/2.0);
+	probability /= (pow(2.0, kappa/2.0) * tgammal(kappa/2.0));
+	probability *= pow(1/pow(x,2.0),(kappa/2.0) + 1.0);
+	probability *= exp(-0.5 * kappa * pow(inv_precision, 2.0) / pow(x, 2.0));
+	return probability;
+}
+
 
 #endif
