@@ -33,7 +33,7 @@ private:
 		const int& state_other,
 		const double& transition_on) const;
 
-	int transition_prob(
+	double transition_prob(
 		const int& state,
 		const double& t0,
 		const double& t1) const;
@@ -48,6 +48,7 @@ private:
 		const double& dist_sd_s1,
 		const double& transition_s0,
 		const double& transition_s1,
+		const double& rand_u,
 		const string& first_last = "middle") const;
 
 	double sample_transition_probability(
@@ -58,6 +59,8 @@ private:
 		const double& step_size,
 		const double& trans_alpha,
 		const double& trans_beta,
+		const double& rand_u,
+		const double& rand_z,
 		bool& accept) const;
 
 	double sample_sd(
@@ -70,6 +73,8 @@ private:
 		const double& mean_mean,
 		const double& mean_confidence,
 		const double& step_size,
+		const double& rand_u,
+		const double& rand_z,
 		bool& accept) const;
 
 	double sample_mean(
@@ -80,6 +85,8 @@ private:
 		const double& mean_mean,
 		const double& mean_confidence,
 		const double& step_size,
+		const double& rand_u,
+		const double& rand_z,
 		bool& accept) const;
 
 	void find_hidden_states(
@@ -121,8 +128,11 @@ public:
 		const double& trans_alpha = 2,
 		const double& trans_beta = 5);
 
-	/* GET PARAMS */
-	void get_params();
+	/* ESTIMATE PARAMS */
+	void estimate_params();
+
+	/* PRINT */
+	void print_params();
 
 };
 

@@ -1,5 +1,5 @@
 #ifndef __MAIN_HMM_CPP
-#define __MAIN_MM_CPP
+#define __MAIN_HMM_CPP
 
 #include <iostream>
 #include <vector>
@@ -23,6 +23,9 @@ string print_bool(const bool& some_bool) {
 int main(int argc, char* argv[]) {
 	string ticker = argv[1];
 	int k_days = stoi(argv[2]);
+	int samples = stoi(argv[3]);
+	int burn_in = stoi(argv[4]);
+
 	string folder = "stock_dataframes/";
 	string ending = ".csv";
 
@@ -60,6 +63,11 @@ int main(int argc, char* argv[]) {
 	// Init vars for sampler
 	// Means and SDs
 	VectorXf l_returns = stock.k_period_log_returns(k_days, false);
+	for (int i = 0; i < l_returns.size(); i++) {
+		double ret_adj = l_returns(i) * 100.0;
+		l_returns(i) = ret_adj;
+	}
+
 	double ret_mean = l_returns.mean();
 	double ret_var = 0;
 	for (int i = 0; i < l_returns.size(); i++) {
@@ -96,8 +104,8 @@ int main(int argc, char* argv[]) {
 		sd_s1, 
 		transition_s0,
 		transition_s1,
-		10000,
-		1000,
+		samples,
+		burn_in,
 		ret_sd,
 		ret_sd,
 		0.5,
@@ -110,8 +118,8 @@ int main(int argc, char* argv[]) {
 		2,
 		5);
 
-	hidden_markov_model.get_params();
-
+	hidden_markov_model.estimate_params();
+	hidden_markov_model.print_params();
 
 	return 0;
 }

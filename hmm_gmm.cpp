@@ -45,6 +45,10 @@ void HMM_GMM::gibbs_sampler(
 		throw invalid_argument( "Hidden States and Observed Values must be of the same size." );
 
 	// Init
+	default_random_engine generator;
+	uniform_real_distribution<double> sample_uniform(0.0,1.0);
+	normal_distribution<double> sample_standard_norm(0.0,1.0);
+
 	int T = hidden_states.size();
 	hidden_states_samples.resize(samples,T);
 	dist_means_samples.resize(samples,2);
@@ -59,10 +63,21 @@ void HMM_GMM::gibbs_sampler(
 	double number_mean_step_accept = 0;
 
 	// Burn in
+	cout << "\nBurning In\n" << endl;
+	int decile = (int) (burn_in / 10.);
+	unsigned int dot_count = 1;
 	for (int i = 0; i < burn_in; i++) {
+
+		if ((i % decile) == 0) {
+			for (int c = 1; c <= dot_count; c++)
+				cout << ".";
+			cout << endl;
+			dot_count++;
+		}
 
 		/* SAMPLE HIDDEN STATES */
 		// S{0} - first one
+		double u = sample_uniform(generator);
 		hidden_states(0) = sample_state(
 			0,
 			-1,
@@ -73,10 +88,13 @@ void HMM_GMM::gibbs_sampler(
 			dist_sd_s1,
 			transition_s0,
 			transition_s1,
+			u,
 			"first");
+		//cout << hidden_states(0) << endl;
 
 		// S{2} - S{T-2}
 		for (int t = 1; t < T-1; t++) {
+			u = sample_uniform(generator);
 			hidden_states(t) = sample_state(
 				t,
 				hidden_states(t-1),
@@ -87,10 +105,13 @@ void HMM_GMM::gibbs_sampler(
 				dist_sd_s1,
 				transition_s0,
 				transition_s1,
+				u,
 				"middle");
+			//cout << hidden_states(t) << endl;
 		}
 
 		// S{T-1} - last one
+		u = sample_uniform(generator);
 		hidden_states(T-1) = sample_state(
 			T-1,
 			hidden_states(T-2),
@@ -101,10 +122,13 @@ void HMM_GMM::gibbs_sampler(
 			dist_sd_s1,
 			transition_s0,
 			transition_s1,
+			u,
 			"last");
-
+		//cout << hidden_states(T-1) << endl;
 
 		/* SAMPLE TRANSITION PROBABILITIES*/
+		u = sample_uniform(generator);
+		double z = sample_standard_norm(generator);
 		bool accept_t0;
 		double t0 = sample_transition_probability(
 			0,
@@ -114,11 +138,16 @@ void HMM_GMM::gibbs_sampler(
 			step_size_transition,
 			trans_alpha,
 			trans_beta,
+			u,
+			z,
 			accept_t0);
+		//cout << t0 << '\t' << transition_s0 << endl;
 		transition_s0 = t0;
 		if (accept_t0)
 			number_t_step_accept += 0.5;
 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		bool accept_t1;
 		double t1 = sample_transition_probability(
 			1,
@@ -128,13 +157,18 @@ void HMM_GMM::gibbs_sampler(
 			step_size_transition,
 			trans_alpha,
 			trans_beta,
+			u,
+			z,
 			accept_t1);
+		//cout << t1 << '\t' << transition_s1 << endl;
 		transition_s1 = t1;
 		if (accept_t1)
 			number_t_step_accept += 0.5;
 
 
 		/* SAMPLE SDs */ 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		bool accept_sd0;
 		double sd0 = sample_sd(
 			dist_sd_s0,
@@ -146,11 +180,16 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s0,
 			mean_confidence,
 			step_size_sd,
+			u,
+			z,
 			accept_sd0);
 		dist_sd_s0 = sd0;
 		if (accept_sd0)
 			number_sd_step_accept += 0.5;
+		//cout << sd0 << endl;
 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		bool accept_sd1;
 		double sd1 = sample_sd(
 			dist_sd_s1,
@@ -162,12 +201,17 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s1,
 			mean_confidence,
 			step_size_sd,
+			u,
+			z,
 			accept_sd1);
 		dist_sd_s1 = sd1;
 		if (accept_sd1)
 			number_sd_step_accept += 0.5;
+		//cout << sd1 << endl;
 
 		/* SAMPLE MEANS */
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		bool accept_mu0;
 		double mu0 = sample_mean(
 			dist_mean_s0,
@@ -177,11 +221,16 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s0,
 			mean_confidence,
 			step_size_mean,
+			u,
+			z,
 			accept_mu0);
 		dist_mean_s0 = mu0;
 		if (accept_mu0)
 			number_mean_step_accept += 0.5;
+		//cout << mu0 << endl;
 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		bool accept_mu1;
 		double mu1 = sample_mean(
 			dist_mean_s1,
@@ -191,10 +240,14 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s1,
 			mean_confidence,
 			step_size_mean,
+			u,
+			z,
 			accept_mu1);
 		dist_mean_s1 = mu1;
 		if (accept_mu1)
 			number_mean_step_accept += 0.5;
+		//cout << mu1 << endl;
+
 
 		// Adjust step sizes based on the acceptance percentages (aim = 0.5)
 		if ((i % 10) == 0) {
@@ -235,11 +288,22 @@ void HMM_GMM::gibbs_sampler(
 	}
 
 	// Sample
+	cout << "\nSampling\n" << endl;
+	decile = (int) (samples / 10.);
+	dot_count = 1;
 	bool accept;
 	for (int i = 0; i < samples; i++) {
 
+		if ((i % decile) == 0) {
+			for (int c = 1; c <= dot_count; c++)
+				cout << ".";
+			cout << endl;
+			dot_count++;
+		}
+
 		/* SAMPLE HIDDEN STATES */
 		// S{0} - first one
+		double u = sample_uniform(generator);
 		hidden_states(0) = sample_state(
 			0,
 			-1,
@@ -250,11 +314,13 @@ void HMM_GMM::gibbs_sampler(
 			dist_sd_s1,
 			transition_s0,
 			transition_s1,
+			u,
 			"first");
 		hidden_states_samples(i,0) = hidden_states(0);
 
 		// S{2} - S{T-2}
 		for (int t = 1; t < T-1; t++) {
+			u = sample_uniform(generator);
 			hidden_states(t) = sample_state(
 				t,
 				hidden_states(t-1),
@@ -265,11 +331,13 @@ void HMM_GMM::gibbs_sampler(
 				dist_sd_s1,
 				transition_s0,
 				transition_s1,
+				u,
 				"middle");
 			hidden_states_samples(i,t) = hidden_states(t);
 		}
 
 		// S{T-1} - last one
+		u = sample_uniform(generator);
 		hidden_states(T-1) = sample_state(
 			T-1,
 			hidden_states(T-2),
@@ -280,11 +348,14 @@ void HMM_GMM::gibbs_sampler(
 			dist_sd_s1,
 			transition_s0,
 			transition_s1,
+			u,
 			"last");
 		hidden_states_samples(i,T-1) = hidden_states(T-1);
 
 
 		/* SAMPLE TRANSITION PROBABILITIES*/
+		u = sample_uniform(generator);
+		double z = sample_standard_norm(generator);
 		double t0 = sample_transition_probability(
 			0,
 			transition_s0,
@@ -293,10 +364,14 @@ void HMM_GMM::gibbs_sampler(
 			step_size_transition,
 			trans_alpha,
 			trans_beta,
+			u,
+			z,
 			accept);
 		transition_s0 = t0;
 		transition_samples(i,0) = transition_s0;
 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		double t1 = sample_transition_probability(
 			1,
 			transition_s0,
@@ -305,12 +380,16 @@ void HMM_GMM::gibbs_sampler(
 			step_size_transition,
 			trans_alpha,
 			trans_beta,
+			u,
+			z,
 			accept);
 		transition_s1 = t1;
 		transition_samples(i,1) = transition_s1;
 
 
 		/* SAMPLE SDs */ 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		double sd0 = sample_sd(
 			dist_sd_s0,
 			0,
@@ -321,10 +400,14 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s0,
 			mean_confidence,
 			step_size_sd,
+			u,
+			z,
 			accept);
 		dist_sd_s0 = sd0;
 		dist_sds_samples(i,0) = dist_sd_s0;
 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		double sd1 = sample_sd(
 			dist_sd_s1,
 			1,
@@ -335,11 +418,15 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s1,
 			mean_confidence,
 			step_size_sd,
+			u,
+			z,
 			accept);
 		dist_sd_s1 = sd1;
 		dist_sds_samples(i,1) = dist_sd_s1;
 
 		/* SAMPLE MEANS */
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		double mu0 = sample_mean(
 			dist_mean_s0,
 			0,
@@ -348,10 +435,14 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s0,
 			mean_confidence,
 			step_size_mean,
+			u,
+			z,
 			accept);
 		dist_mean_s0 = mu0;
 		dist_means_samples(i,0) = dist_mean_s0;
 
+		u = sample_uniform(generator);
+		z = sample_standard_norm(generator);
 		double mu1 = sample_mean(
 			dist_mean_s1,
 			1,
@@ -360,20 +451,31 @@ void HMM_GMM::gibbs_sampler(
 			mean_mean_s1,
 			mean_confidence,
 			step_size_mean,
+			u,
+			z,
 			accept);
 		dist_mean_s1 = mu1;
 		dist_means_samples(i,1) = dist_mean_s1;
 
 	}
+	cout << endl;
 
 }
 
 
-void HMM_GMM::get_params() {
+void HMM_GMM::estimate_params() {
 	/* Finds the optimal parameter:
 	-> Finds the mean for all params besides the states
 	-> then uses these params and the viterbi algorithm
 		to find the optimal hidden states */
+	// INIT
+	int T = observed.size();
+	optimal_transitions.resize(2);
+	optimal_means.resize(2);
+	optimal_sds.resize(2);
+	optimal_hidden_states.resize(T);
+	hidden_states_probabilities.resize(T);
+
 	// Transitions
 	optimal_transitions(0) = transition_samples.col(0).mean();
 	optimal_transitions(1) = transition_samples.col(1).mean();
@@ -384,9 +486,36 @@ void HMM_GMM::get_params() {
 	optimal_sds(0) = dist_sds_samples.col(0).mean();
 	optimal_sds(1) = dist_sds_samples.col(1).mean();
 
-	// Use these to find the optimal hidden states
-	find_hidden_states(optimal_transitions, optimal_means, optimal_sds);
+	// MEAN method
+	for (int t = 0; t < T; t++) {
+		double prob = hidden_states_samples.col(t).mean();
+		hidden_states_probabilities(t) = prob;
+		optimal_hidden_states(t) = round(prob);
+	}
 
+	// VITERBI method
+	// Use these to find the optimal hidden states
+	// find_hidden_states(optimal_transitions, optimal_means, optimal_sds);
+
+}
+
+void HMM_GMM::print_params() {
+	// Prints parameters found
+	cout << "\nTRANSITION PROBABILITIES" << endl;
+	cout << "State 0: " << optimal_transitions(0) << endl;
+	cout << "State 1: " << optimal_transitions(1) << endl;
+
+	cout << "\nGAUSSIAN PARAMS" << endl;
+	cout << "State 0 (mean - sd): " << optimal_means(0) << "\t - \t" << optimal_sds(0) << endl;
+	cout << "State 1 (mean - sd): " << optimal_means(1) << "\t - \t" << optimal_sds(1) << endl;
+
+	cout << "\nHIDDEN STATES" << endl;
+	cout << "State - Probability" << endl;
+	for (int t = 0; t < observed.size(); t++) {
+		cout << optimal_hidden_states(t)
+		<< "\t - \t" << hidden_states_probabilities(t)
+		<< endl;
+	}
 }
 
 
@@ -401,6 +530,7 @@ void HMM_GMM::find_hidden_states(
 
 	// INIT
 	Distributions dist;
+
 	int T = observed.size();
 	MatrixXf T_1(2,T);
 	MatrixXf T_2(2,T);
@@ -415,6 +545,13 @@ void HMM_GMM::find_hidden_states(
 
 	// Loop states
 	for (int t = 1; t < T; t++) {
+		// Attempt to solve rounding errors: not sure how well it works
+		double mean_val = (T_1(0,t-1) + T_1(1,t-1)) / 2.0;
+		double t0 = T_1(0,t-1) / mean_val;
+		double t1 = T_1(1,t-1) / mean_val;
+		T_1(0,t-1) = t0;
+		T_1(1,t-1) = t1;
+
 		for (int i = 0; i < 2; i++) {
 			double val1 = T_1(0,t-1) * p_state_given_other_state(0,i,transitions(0)) * dist.normal(observed(t),means(i),sds(i));
 			double val2 = T_1(1,t-1) * p_state_given_other_state(1,i,transitions(1)) * dist.normal(observed(t),means(i),sds(i));
@@ -425,6 +562,7 @@ void HMM_GMM::find_hidden_states(
 			T_1(i,t) = max_val;
 			T_2(i,t) = arg;
 		}
+		cout << T_1(0,t) << '\t' << T_1(1,t) << endl;
 	}
 
 	/* BACKWARD */
@@ -455,12 +593,11 @@ int HMM_GMM::sample_state(
 		const double& dist_sd_s1,
 		const double& transition_s0,
 		const double& transition_s1,
+		const double& rand_u,
 		const string& first_last) const {
 	/* Samples a state (0 or 1) for particular state-variable */
 	// INIT
 	Distributions dist;
-	default_random_engine generator;
-	uniform_real_distribution<double> sample_uniform(0.0,1.0);
 
 	// Get probs
 	double p0_unnorm = dist.normal(observed(state_index), dist_mean_s0, dist_sd_s0);
@@ -498,8 +635,7 @@ int HMM_GMM::sample_state(
 	double p_comb = p0_unnorm + p1_unnorm;
 	double p0 = p0_unnorm / p_comb;
 	double p1 = p1_unnorm / p_comb;
-	double u = sample_uniform(generator);
-	if (u <= p0)
+	if (rand_u <= p0)
 		return 0;
 	else
 		return 1;
@@ -513,6 +649,8 @@ double HMM_GMM::sample_transition_probability(
 	const double& step_size,
 	const double& trans_alpha,
 	const double& trans_beta,
+	const double& rand_u,
+	const double& rand_z,
 	bool& accept) const {
 	/* Samples a transition probability for a particular state 
 	using a Metropolis-Hastings step.
@@ -528,12 +666,14 @@ double HMM_GMM::sample_transition_probability(
 
 	// INIT
 	Distributions dist;
-	default_random_engine generator;
-	uniform_real_distribution<double> sample_uniform(0.0,1.0);
-	normal_distribution<double> sample_standard_norm(0.0,1.0);
 
 	// 1. proposal
-	double t_proposal = t_orig + (step_size*sample_standard_norm(generator));
+	double t_proposal = t_orig + (step_size*rand_z);
+	if (t_proposal < 0)
+		t_proposal = 0.0;
+	else if (t_proposal > 1)
+		t_proposal = 1.0;
+
 	// 2. calculate acceptance probability
 	double posterior_division = dist.beta_dist(t_proposal, trans_alpha, trans_beta);
 	posterior_division /= dist.beta_dist(t_orig, trans_alpha, trans_beta);
@@ -563,8 +703,7 @@ double HMM_GMM::sample_transition_probability(
 	}
 	double p_accept = min(1.0, posterior_division);
 	// 3. sample
-	double u = sample_uniform(generator);
-	if (u <= p_accept) {
+	if (rand_u <= p_accept) {
 		accept = true;
 		return t_proposal;
 	}
@@ -584,21 +723,20 @@ double HMM_GMM::sample_sd(
 	const double& mean_mean,
 	const double& mean_confidence,
 	const double& step_size,
+	const double& rand_u,
+	const double& rand_z,
 	bool& accept) const {
 	/* Samples standard deviation using a metropolis-hastings step.
 	Assumes that standard deviation is distributed according to inverse-gamma,
 	and that the mean given standard deviation is normal distributed */
-	if ((sample_state != 0) || (sample_state != 1))
+	if ((sample_state != 0) && (sample_state != 1))
 		throw invalid_argument( "Please enter a state of 0 or 1." );
 
 	// INIT
 	Distributions dist;
-	default_random_engine generator;
-	uniform_real_distribution<double> sample_uniform(0.0,1.0);
-	normal_distribution<double> sample_standard_norm(0.0,1.0);
 
 	// 1. proposal
-	double sd_proposal = sd_orig + (step_size*sample_standard_norm(generator));
+	double sd_proposal = sd_orig + (step_size*rand_z);
 	// 2. calculate acceptance probability
 	double posterior_division = dist.normal(state_mean, mean_mean, sd_proposal / pow(mean_confidence,0.5));
 	posterior_division /= dist.normal(state_mean, mean_mean, sd_orig / pow(mean_confidence,0.5));
@@ -613,8 +751,7 @@ double HMM_GMM::sample_sd(
 	}
 	double p_accept = min(1.0, posterior_division);
 	// 3. sample
-	double u = sample_uniform(generator);
-	if (u <= p_accept) {
+	if (rand_u <= p_accept) {
 		accept = true;
 		return sd_proposal;
 	}
@@ -632,20 +769,19 @@ double HMM_GMM::sample_mean(
 	const double& mean_mean,
 	const double& mean_confidence,
 	const double& step_size,
+	const double& rand_u,
+	const double& rand_z,
 	bool& accept) const {
 	/* Samples mean using a metropolis-hastings step.
 	Assumes that the mean given standard deviation is normal distributed */
-	if ((sample_state != 0) || (sample_state != 1))
+	if ((sample_state != 0) && (sample_state != 1))
 		throw invalid_argument( "Please enter a state of 0 or 1." );
 
 	// INIT
 	Distributions dist;
-	default_random_engine generator;
-	uniform_real_distribution<double> sample_uniform(0.0,1.0);
-	normal_distribution<double> sample_standard_norm(0.0,1.0);
 
 	// 1. proposal
-	double mean_proposal = mean_orig + (step_size*sample_standard_norm(generator));
+	double mean_proposal = mean_orig + (step_size*rand_z);
 	// 2. calculate acceptance probability
 	double posterior_division = dist.normal(mean_proposal, mean_mean, state_sd / pow(mean_confidence,0.5));
 	posterior_division /= dist.normal(mean_orig, mean_mean, state_sd / pow(mean_confidence,0.5));
@@ -658,8 +794,7 @@ double HMM_GMM::sample_mean(
 	}
 	double p_accept = min(1.0, posterior_division);
 	// 3. sample
-	double u = sample_uniform(generator);
-	if (u <= p_accept) {
+	if (rand_u <= p_accept) {
 		accept = true;
 		return mean_proposal;
 	}
@@ -673,16 +808,18 @@ double HMM_GMM::p_state_given_other_state(
 	const int& state_on,
 	const int& state_other,
 	const double& transition_on) const {
-	if ((state_other != 0) || state_other != 1)
+	if ((state_other != 0) && (state_other != 1))
 		throw invalid_argument( "please enter proper state other (0 or 1)." );
 
 	if (state_on == state_other)
 		return 1 - transition_on;
 	else if (state_on != state_other)
 		return transition_on;
+	else
+		throw invalid_argument( "This should not happen." );
 }
 
-int HMM_GMM::transition_prob(
+double HMM_GMM::transition_prob(
 	const int& state,
 	const double& t0,
 	const double& t1) const {
