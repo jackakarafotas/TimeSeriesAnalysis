@@ -21,6 +21,12 @@ private:
 	MatrixXf dist_sds_samples;
 	MatrixXf transition_samples;
 
+	VectorXf optimal_hidden_states;
+	VectorXf hidden_states_probabilities;
+	VectorXf optimal_means;
+	VectorXf optimal_sds;
+	VectorXf optimal_transitions;
+
 	/* HELPERS */
 	double p_state_given_other_state(
 		const int& state_on,
@@ -76,6 +82,17 @@ private:
 		const double& step_size,
 		bool& accept) const;
 
+	void find_hidden_states(
+		const VectorXf& transitions,
+		const VectorXf& means,
+		const VectorXf& sds);
+
+	void argmax(
+		const double& val1,
+		const double& val2,
+		double& max_val,
+		int& arg) const;
+
 public:
 	/* DEFAULT */
 	HMM_GMM(const VectorXf& observed_data);
@@ -103,6 +120,9 @@ public:
 		const double& init_step_size_transition = 0.1,
 		const double& trans_alpha = 2,
 		const double& trans_beta = 5);
+
+	/* GET PARAMS */
+	void get_params();
 
 };
 

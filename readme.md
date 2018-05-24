@@ -6,6 +6,8 @@ ARFIMA model for log stock prices:
 Hidden Markov Model (observed data distributed according to Gaussian) - fit with Gibbs Sampler
 - Fits a hidden markov model (2 hidden states, observed data is normally distributed) to time series data using a gibbs sampler
 - Within the gibbs sampler used Metropolis-Hastings jumps
+- Finds the optimal parameters (besides the hidden states) by finding the mean of the samples
+- Finds the optimal hidden states using the Viterbi Algoirthm (implemented so that probabilities are also returned)
 
 Beta:
 - find a relationship coefficient between different time series (takes into account the need to difference the time series if the residuals are not stationary)

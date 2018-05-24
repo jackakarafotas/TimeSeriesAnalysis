@@ -45,11 +45,6 @@ void HMM_GMM::gibbs_sampler(
 		throw invalid_argument( "Hidden States and Observed Values must be of the same size." );
 
 	// Init
-	Distributions dist;
-	default_random_engine generator;
-	uniform_real_distribution<double> sample_uniform(0.0,1.0);
-	normal_distribution<double> sample_standard_norm(0.0,1.0);
-
 	int T = hidden_states.size();
 	hidden_states_samples.resize(samples,T);
 	dist_means_samples.resize(samples,2);
@@ -374,7 +369,82 @@ void HMM_GMM::gibbs_sampler(
 }
 
 
+void HMM_GMM::get_params() {
+	/* Finds the optimal parameter:
+	-> Finds the mean for all params besides the states
+	-> then uses these params and the viterbi algorithm
+		to find the optimal hidden states */
+	// Transitions
+	optimal_transitions(0) = transition_samples.col(0).mean();
+	optimal_transitions(1) = transition_samples.col(1).mean();
+
+	// Means and SDs
+	optimal_means(0) = dist_means_samples.col(0).mean();
+	optimal_means(1) = dist_means_samples.col(1).mean();
+	optimal_sds(0) = dist_sds_samples.col(0).mean();
+	optimal_sds(1) = dist_sds_samples.col(1).mean();
+
+	// Use these to find the optimal hidden states
+	find_hidden_states(optimal_transitions, optimal_means, optimal_sds);
+
+}
+
+
 /* HELPERS */
+// VITERBI
+void HMM_GMM::find_hidden_states(
+	const VectorXf& transitions,
+	const VectorXf& means,
+	const VectorXf& sds) {
+	/* Uses the viterbi algorithm to find the optimal
+	hidden states and their probability */
+
+	// INIT
+	Distributions dist;
+	int T = observed.size();
+	MatrixXf T_1(2,T);
+	MatrixXf T_2(2,T);
+
+	/* FORWARD */
+	// Initial state
+	double p_1 = hidden_states_samples.col(0).sum() / hidden_states_samples.rows(); // 1s will be summed
+	T_1(0,0) = (1.0 - p_1) * dist.normal(observed(0),means(0),sds(0));
+	T_2(0,0) = 0;
+	T_1(1,0) = p_1 * dist.normal(observed(1),means(1),sds(1));
+	T_2(1,0) = 0;
+
+	// Loop states
+	for (int t = 1; t < T; t++) {
+		for (int i = 0; i < 2; i++) {
+			double val1 = T_1(0,t-1) * p_state_given_other_state(0,i,transitions(0)) * dist.normal(observed(t),means(i),sds(i));
+			double val2 = T_1(1,t-1) * p_state_given_other_state(1,i,transitions(1)) * dist.normal(observed(t),means(i),sds(i));
+			double max_val;
+			int arg;
+			argmax(val1,val2,max_val,arg);
+
+			T_1(i,t) = max_val;
+			T_2(i,t) = arg;
+		}
+	}
+
+	/* BACKWARD */
+	// last state
+	double max_val;
+	int arg;
+	argmax(T_1(0,T-1),T_1(1,T-1),max_val,arg);
+	optimal_hidden_states(T-1) = arg;
+	hidden_states_probabilities(T-1) = max_val;
+
+	// loop states
+	for (int t = T-1; t > 0; t--) {
+		optimal_hidden_states(t-1) = T_2(optimal_hidden_states(t),t);
+		hidden_states_probabilities(t-1) = T_1(optimal_hidden_states(t),t);
+	}
+
+
+}
+
+// SAMPLERS
 int HMM_GMM::sample_state(
 		const int& state_index,
 		const int& previous_hidden_state,
@@ -622,6 +692,20 @@ int HMM_GMM::transition_prob(
 		return t1;
 	else
 		throw invalid_argument( "State needs to be 0 or 1." );
+}
+
+void HMM_GMM::argmax(
+	const double& val1,
+	const double& val2,
+	double& max_val,
+	int& arg) const {
+	if (val1 < val2) {
+		max_val = val2;
+		arg = 1;
+	} else {
+		max_val = val1;
+		arg = 0;
+	}
 }
 
 
